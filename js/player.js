@@ -7,11 +7,21 @@ class Player {
         // Load the bison model
         const loader = new THREE.GLTFLoader();
         loader.load(
-            'models/bison.glb', // You'll need to create this directory and add your model
+            'models/bison.glb',
             (gltf) => {
                 this.mesh.add(gltf.scene);
-                gltf.scene.scale.set(1, 1, 1); // Adjust scale as needed
-                gltf.scene.rotation.y = 0.5 * Math.PI; // Make it face forward
+                gltf.scene.scale.set(1, 1, 1);
+                gltf.scene.rotation.y = 0.5 * Math.PI;
+
+                // Add dark brown color to the model
+                gltf.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = new THREE.MeshPhongMaterial({
+                            color: 0x4a3728, // Dark brown color
+                            shininess: 5
+                        });
+                    }
+                });
             },
             (xhr) => {
                 console.log((xhr.loaded / xhr.total * 100) + '% loaded');
