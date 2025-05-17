@@ -3,9 +3,25 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a8ebd);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({
-    //antialias: true,
-    alpha: false // Disable alpha to prevent any transparency issues
+    antialias: true,
+    alpha: false
 });
+
+// Player state
+const player = {
+    position: new THREE.Vector3(0, 1.7, 0), // Eye height
+    rotation: 0,
+    moveSpeed: 0.1,
+    rotationSpeed: 0.05
+};
+
+// Movement state
+const moveState = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false
+};
 
 // Add lighting
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -20,20 +36,90 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// Create the ground plane
-const planeGeometry = new THREE.PlaneGeometry(1000, 1000); // Made bigger to feel more infinite
-const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x76b5c5 });
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.rotation.x = -Math.PI / 2;
-scene.add(plane);
+// Create a test bison
+const bison = new Bison();
+scene.add(bison.mesh);
+bison.mesh.position.set(0, 0.5, -10); // Place bison 10 units ahead
 
-// Initialize the player
-const player = new Player();
-scene.add(player.mesh);
+// Handle keyboard controls
+document.addEventListener('keydown', (event) => {
+    switch(event.code) {
+        case 'KeyW': moveState.forward = true; break;
+        case 'KeyS': moveState.backward = true; break;
+        case 'KeyA': moveState.left = true; break;
+        case 'KeyD': moveState.right = true; break;
+    }
+});
 
-// Position camera higher and further back for better view
-camera.position.set(0, 2, 5);
-camera.lookAt(player.mesh.position);
+document.addEventListener('keyup', (event) => {
+    switch(event.code) {
+        case 'KeyW': moveState.forward = false; break;
+        case 'KeyS': moveState.backward = false; break;
+        case 'KeyA': moveState.left = false; break;
+        case 'KeyD': moveState.right = false; break;
+    }
+});
+
+// Handle gamepad input
+function handleGamepad() {
+    const gamepads = navigator.getGamepads();
+    if (!gamepads) return;
+
+    const gamepad = gamepads.find(element => element !== null && element !== undefined);
+    if (!gamepad) return;
+
+    const DEADZONE = 0.1;
+
+    // Left stick movement
+    if (Math.abs(gamepad.axes[0]) > DEADZONE) {
+        const sidewaysMovement = -gamepad.axes[0] * player.moveSpeed; // Added negative
+        player.position.x += Math.cos(player.rotation) * sidewaysMovement;
+        player.position.z += Math.sin(player.rotation) * sidewaysMovement;
+    }
+
+    if (Math.abs(gamepad.axes[1]) > DEADZONE) {
+        const forwardMovement = gamepad.axes[1] * player.moveSpeed; // Removed negative
+        player.position.x += Math.sin(player.rotation) * forwardMovement;
+        player.position.z += Math.cos(player.rotation) * forwardMovement;
+    }
+
+    // Right stick rotation
+    if (Math.abs(gamepad.axes[2]) > DEADZONE) {
+        player.rotation -= gamepad.axes[2] * player.rotationSpeed; // Changed from +=
+    }
+}
+
+// Game loop
+function animate() {
+    requestAnimationFrame(animate);
+
+    // Handle keyboard movement
+    if (moveState.forward) {
+        player.position.x -= Math.sin(player.rotation) * player.moveSpeed;  // Changed from +=
+        player.position.z -= Math.cos(player.rotation) * player.moveSpeed;  // Changed from +=
+    }
+    if (moveState.backward) {
+        player.position.x += Math.sin(player.rotation) * player.moveSpeed;  // Changed from -=
+        player.position.z += Math.cos(player.rotation) * player.moveSpeed;  // Changed from -=
+    }
+    if (moveState.left) {
+        player.position.x += Math.cos(player.rotation) * player.moveSpeed;  // Changed from -=
+        player.position.z -= Math.sin(player.rotation) * player.moveSpeed;  // Changed from +=
+    }
+    if (moveState.right) {
+        player.position.x -= Math.cos(player.rotation) * player.moveSpeed;  // Changed from +=
+        player.position.z += Math.sin(player.rotation) * player.moveSpeed;  // Changed from -=
+    }
+
+    // Handle gamepad
+    handleGamepad();
+
+    // Update camera
+    camera.position.copy(player.position);
+    camera.rotation.y = player.rotation;
+
+    renderer.render(scene, camera);
+}
 
 // Handle window resizing
 window.addEventListener('resize', () => {
@@ -42,13 +128,5 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Game loop
-function animate() {
-    requestAnimationFrame(animate);
-    player.update();
-    renderer.render(scene, camera);
-}
-
-// Setup controls
-setupControls(player);
+// Start the game
 animate();
