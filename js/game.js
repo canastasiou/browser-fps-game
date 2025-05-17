@@ -1,7 +1,12 @@
 // Set up the scene, camera, and renderer
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a8ebd);
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(
+    60,  // FOV reduced from 75 to 60 for less distortion
+    window.innerWidth / window.innerHeight,
+    0.1,  // Near plane
+    2000  // Far plane increased from 1000 to 2000
+);
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: false
@@ -37,7 +42,7 @@ directionalLight.position.set(5, 5, 5);
 scene.add(directionalLight);
 
 // Create ground plane
-const planeGeometry = new THREE.PlaneGeometry(1000, 1000);
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000); // Increased from 1000 to 2000
 const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x76b5c5 });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
 plane.rotation.x = -Math.PI / 2; // Rotate to be horizontal
@@ -132,12 +137,44 @@ function handleGamepad() {
 
 // Check targeting
 function checkTargeting() {
+    // Get debug element reference
+    const debugEl = document.getElementById('debug');
+
+    // Simple forward direction from camera's view
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
     const intersects = raycaster.intersectObjects(targetableObjects, true);
+
+    // Optional: Debug ray visualization
+    // Remove any existing debug line
+    const existingLine = scene.getObjectByName('debugRay');
+    if (existingLine) scene.remove(existingLine);
+
+    // Draw debug ray
+    const rayLength = 20;
+    const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+        camera.position,
+        new THREE.Vector3(
+            camera.position.x + raycaster.ray.direction.x * rayLength,
+            camera.position.y + raycaster.ray.direction.y * rayLength,
+            camera.position.z + raycaster.ray.direction.z * rayLength
+        )
+    ]);
+    const rayLine = new THREE.Line(
+        rayGeometry,
+        new THREE.LineBasicMaterial({ color: intersects.length > 0 ? 0xff0000 : 0xffffff })
+    );
+    rayLine.name = 'debugRay';
+    scene.add(rayLine);
 
     const crosshair = document.getElementById('crosshair');
     if (intersects.length > 0) {
         crosshair.classList.add('target');
+        // Debug info in debug panel
+        const hit = intersects[0];
+        if (debugEl) {
+            debugEl.textContent += `\nTarget: hit at ${hit.point.y.toFixed(2)}y, dist: ${hit.distance.toFixed(2)}`;
+        }
     } else {
         crosshair.classList.remove('target');
     }
