@@ -6,6 +6,7 @@
 }
 
 body {
+    margin: 0;
     overflow: hidden;
     background-color: #1a8ebd;
 }
@@ -18,4 +19,58 @@ canvas {
     position: relative;
     width: 100%;
     height: 100%;
+}
+
+#crosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+    z-index: 999;
+}
+
+#crosshair::before,
+#crosshair::after {
+    content: '';
+    position: absolute;
+    background-color: white;
+    transition: background-color 0.2s;
+}
+
+#crosshair::before {
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    transform: translateY(-50%);
+}
+
+#crosshair::after {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    transform: translateX(-50%);
+}
+
+#crosshair.target {
+    /* Color when targeting an animal */
+    &::before, &::after {
+        background-color: red;
+    }
+}
+
+#debug {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    z-index: 1000;
+    white-space: pre;
 }
