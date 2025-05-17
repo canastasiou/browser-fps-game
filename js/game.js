@@ -17,7 +17,7 @@ const player = {
     position: new THREE.Vector3(0, 1.7, 0), // Eye height
     rotation: 0,
     verticalRotation: 0,     // Add this line
-    moveSpeed: 0.1,
+    moveSpeed: 0.22,         // Increased from 0.1 to 0.12 (20% faster)
     rotationSpeed: 0.05
 };
 
@@ -137,44 +137,14 @@ function handleGamepad() {
 
 // Check targeting
 function checkTargeting() {
-    // Get debug element reference
-    const debugEl = document.getElementById('debug');
-
     // Simple forward direction from camera's view
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-
     const intersects = raycaster.intersectObjects(targetableObjects, true);
 
-    // Optional: Debug ray visualization
-    // Remove any existing debug line
-    const existingLine = scene.getObjectByName('debugRay');
-    if (existingLine) scene.remove(existingLine);
-
-    // Draw debug ray
-    const rayLength = 20;
-    const rayGeometry = new THREE.BufferGeometry().setFromPoints([
-        camera.position,
-        new THREE.Vector3(
-            camera.position.x + raycaster.ray.direction.x * rayLength,
-            camera.position.y + raycaster.ray.direction.y * rayLength,
-            camera.position.z + raycaster.ray.direction.z * rayLength
-        )
-    ]);
-    const rayLine = new THREE.Line(
-        rayGeometry,
-        new THREE.LineBasicMaterial({ color: intersects.length > 0 ? 0xff0000 : 0xffffff })
-    );
-    rayLine.name = 'debugRay';
-    scene.add(rayLine);
-
+    // Update crosshair state
     const crosshair = document.getElementById('crosshair');
     if (intersects.length > 0) {
         crosshair.classList.add('target');
-        // Debug info in debug panel
-        const hit = intersects[0];
-        if (debugEl) {
-            debugEl.textContent += `\nTarget: hit at ${hit.point.y.toFixed(2)}y, dist: ${hit.distance.toFixed(2)}`;
-        }
     } else {
         crosshair.classList.remove('target');
     }
