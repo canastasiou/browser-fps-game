@@ -12,11 +12,17 @@ const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: false,
     powerPreference: "high-performance",
-    precision: "highp"
+    precision: "highp",
+    stencil: false,          // Add this if you don't need stencil buffer
+    depth: true,             // Keep depth testing
+    logarithmicDepthBuffer: true  // Better depth handling for large scenes
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit max pixel ratio
+
+// Enable shadow mapping with better performance
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.physicallyCorrectLights = true;
+renderer.outputEncoding = THREE.sRGBEncoding;
 
 // Player state
 const player = {
@@ -101,11 +107,8 @@ const treePositions = [
     { x: 15, z: -30 }   // Far right back
 ];
 
-treePositions.forEach(pos => {
-    const tree = new Tree();
-    scene.add(tree.mesh);
-    tree.mesh.position.set(pos.x, 0, pos.z);
-});
+// Replace individual tree creation with instanced trees
+const treeInstancer = new TreeInstancer(treePositions);
 
 // Handle keyboard controls
 document.addEventListener('keydown', (event) => {
@@ -333,20 +336,24 @@ function updateVisibility() {
     projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreenMatrix);
 
-    // Check bisons
+    // Use object bounds for faster GPU culling
     bisons.forEach(bison => {
         if (bison.mesh && !bison.isDead) {
-            const distance = camera.position.distanceTo(bison.mesh.position);
-            bison.mesh.visible = distance < 100 && frustum.containsPoint(bison.mesh.position);
-        }
-    });
+            // Get the bison's geometry through the GLTF model
+            if (!bison.mesh.boundingSphere) {
+                bison.mesh.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        child.geometry.computeBoundingSphere();
+                        bison.mesh.boundingSphere = child.geometry.boundingSphere.clone();
+                    }
+                });
+            }
 
-    // Check trees
-    treePositions.forEach((pos, i) => {
-        const tree = scene.getObjectByName(`tree_${i}`);
-        if (tree) {
-            const distance = camera.position.distanceTo(tree.position);
-            tree.visible = distance < 150 && frustum.containsPoint(tree.position);
+            const distance = camera.position.distanceTo(bison.mesh.position);
+            bison.mesh.visible = distance < 100 &&
+                (bison.mesh.boundingSphere ?
+                    frustum.intersectsSphere(bison.mesh.boundingSphere) : true);
+            bison.mesh.frustumCulled = true;
         }
     });
 }

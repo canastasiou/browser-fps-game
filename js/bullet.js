@@ -27,15 +27,23 @@ class BulletPool {
         this.pool = [];
         this.active = new Set();
 
+        // Create shared geometry and material
+        const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            emissive: 0xffff00,
+            emissiveIntensity: 0.5
+        });
+
         for (let i = 0; i < size; i++) {
-            const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-            const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.visible = false;
             scene.add(mesh);
             this.pool.push({
                 mesh,
-                direction: new THREE.Vector3()
+                direction: new THREE.Vector3(),
+                createTime: 0,
+                speed: 2.0
             });
         }
     }
@@ -46,6 +54,7 @@ class BulletPool {
             bullet.mesh.visible = true;
             bullet.mesh.position.copy(position);
             bullet.direction.copy(direction).normalize();
+            bullet.createTime = performance.now();
             this.active.add(bullet);
         }
         return bullet;
