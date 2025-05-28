@@ -1,7 +1,10 @@
 class Bison {
     constructor() {
         this.mesh = new THREE.Object3D();
-        this.mesh.position.y = 0.5;
+        this.health = 100;
+        this.isDead = false;
+        this.meatDropped = false;
+        this.droppedMeat = null;
 
         // Load the bison model
         const loader = new THREE.GLTFLoader();
@@ -29,6 +32,53 @@ class Bison {
                 console.error('An error occurred loading the model:', error);
             }
         );
+    }
+
+    takeDamage(amount) {
+        if (this.isDead) return;
+
+        this.health -= amount;
+        console.log('Bison hit! Health:', this.health);
+
+        if (this.health <= 0) {
+            this.die();
+        }
+    }
+
+    die() {
+        if (this.isDead) return;
+
+        this.isDead = true;
+        console.log('Bison died!');
+
+        // Create meat drop
+        const meatGeometry = new THREE.BoxGeometry(0.5, 0.2, 0.3);
+        const meatMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+        this.droppedMeat = new THREE.Mesh(meatGeometry, meatMaterial);
+        this.droppedMeat.position.copy(this.mesh.position);
+        this.droppedMeat.position.y = 0.1;
+        scene.add(this.droppedMeat);
+        this.meatDropped = true;
+
+        // Hide the bison model
+        this.mesh.visible = false;
+    }
+
+    checkMeatPickup(playerPosition) {
+        if (this.isDead && this.meatDropped && this.droppedMeat) {
+            // Get horizontal distance only (ignore y/height difference)
+            const dx = playerPosition.x - this.droppedMeat.position.x;
+            const dz = playerPosition.z - this.droppedMeat.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+
+            if (distance < 2) { // Increased pickup range to 2 units
+                scene.remove(this.droppedMeat);
+                this.droppedMeat = null;
+                this.meatDropped = false;
+                return true;
+            }
+        }
+        return false;
     }
 }
 

@@ -16,14 +16,20 @@ const renderer = new THREE.WebGLRenderer({
 const player = {
     position: new THREE.Vector3(0, 1.7, 0), // Eye height
     rotation: 0,
-    verticalRotation: 0,     // Add this line
-    moveSpeed: 0.22,         // Increased from 0.1 to 0.12 (20% faster)
-    rotationSpeed: 0.05
+    verticalRotation: 0,
+    moveSpeed: 0.22,
+    rotationSpeed: 0.05,
+    meatCollected: 0
 };
 
 // Add FPS counter variables after player state
 let lastTime = performance.now();
 let fps = 0;
+
+// Add bullet management variables
+const bullets = [];
+let lastShotTime = 0;
+const SHOT_COOLDOWN = 250; // milliseconds between shots
 
 // Movement state
 const moveState = {
@@ -54,27 +60,47 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// Create a test bison
-const bison = new Bison();
-scene.add(bison.mesh);
-bison.mesh.position.set(0, 0, -10);
+// Create multiple bisons
+const bisons = [];
+const bisonPositions = [
+    { x: 0, z: -10 },    // Original bison position
+    { x: -15, z: -20 },  // Left far
+    { x: 15, z: -20 },   // Right far
+    { x: -8, z: -30 },   // Left very far
+    { x: 8, z: -30 },    // Right very far
+    { x: 0, z: -25 }     // Center far
+];
 
-// Add raycaster for targeting
-const raycaster = new THREE.Raycaster();
-const targetableObjects = [bison.mesh]; // Array of objects that can be targeted
+bisonPositions.forEach(pos => {
+    const bison = new Bison();
+    scene.add(bison.mesh);
+    bison.mesh.position.set(pos.x, 0, pos.z);
+    bisons.push(bison);
+});
 
-// Create trees around the bison
-const tree1 = new Tree();
-scene.add(tree1.mesh);
-tree1.mesh.position.set(-3, 0, -12); // Left of bison
+// Create trees around the area
+const treePositions = [
+    // Near trees
+    { x: -3, z: -12 },  // Original left tree
+    { x: 3, z: -12 },   // Original right tree
+    { x: 0, z: -15 },   // Original back tree
+    // Additional trees
+    { x: -10, z: -15 }, // Far left
+    { x: 10, z: -15 },  // Far right
+    { x: -5, z: -25 },  // Back left
+    { x: 5, z: -25 },   // Back right
+    { x: -8, z: -20 },  // Mid left
+    { x: 8, z: -20 },   // Mid right
+    { x: 0, z: -35 },   // Far back
+    { x: -15, z: -30 }, // Far left back
+    { x: 15, z: -30 }   // Far right back
+];
 
-const tree2 = new Tree();
-scene.add(tree2.mesh);
-tree2.mesh.position.set(3, 0, -12); // Right of bison
-
-const tree3 = new Tree();
-scene.add(tree3.mesh);
-tree3.mesh.position.set(0, 0, -15); // Behind bison
+treePositions.forEach(pos => {
+    const tree = new Tree();
+    scene.add(tree.mesh);
+    tree.mesh.position.set(pos.x, 0, pos.z);
+});
 
 // Handle keyboard controls
 document.addEventListener('keydown', (event) => {
@@ -133,6 +159,27 @@ function handleGamepad() {
             )
         );
     }
+
+    // Handle shooting with right trigger
+    if (gamepad.buttons[7]?.pressed) {
+        const currentTime = performance.now();
+        if (currentTime - lastShotTime >= SHOT_COOLDOWN) {
+            shoot();
+            lastShotTime = currentTime;
+        }
+    }
+}
+
+// Add shooting function
+function shoot() {
+    // Create direction vector from camera
+    const direction = new THREE.Vector3(0, 0, -1);
+    direction.applyQuaternion(camera.quaternion);
+
+    // Create bullet starting from camera position
+    const bullet = new Bullet(camera.position.clone(), direction);
+    scene.add(bullet.mesh);
+    bullets.push(bullet);
 }
 
 // Check targeting
@@ -161,7 +208,8 @@ Position:
   Z: ${player.position.z.toFixed(2)}
 Rotation:
   H: ${(player.rotation * 180 / Math.PI).toFixed(1)}°
-  V: ${(player.verticalRotation * 180 / Math.PI).toFixed(1)}°`;
+  V: ${(player.verticalRotation * 180 / Math.PI).toFixed(1)}°
+Meat Collected: ${player.meatCollected}`; // Add this line
 }
 
 // Game loop
@@ -197,14 +245,52 @@ function animate() {
     // Check targeting
     checkTargeting();
 
-    // Handle gamepad shooting
-    const gamepad = navigator.getGamepads()?.find(pad => pad !== null);
-    if (gamepad && gamepad.buttons[7]?.pressed) { // Right trigger
+    // Update bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        if (!bullet.update()) {
+            scene.remove(bullet.mesh);
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        // Check for collisions with targets
+        const bulletPosition = bullet.mesh.position;
+        const raycaster = new THREE.Raycaster(bulletPosition, bullet.direction);
         const intersects = raycaster.intersectObjects(targetableObjects, true);
-        if (intersects.length > 0) {
-            console.log('Hit!'); // Add shooting logic here
+
+        if (intersects.length > 0 && intersects[0].distance < bullet.speed) {
+            const hitMesh = intersects[0].object;
+            console.log('Hit mesh:', hitMesh); // Debug hit mesh
+
+            const hitBison = bisons.find(bison => {
+                // Check if the hit mesh is part of this bison's hierarchy
+                let isBisonMesh = false;
+                bison.mesh.traverse((child) => {
+                    if (child === hitMesh) {
+                        isBisonMesh = true;
+                    }
+                });
+                return isBisonMesh;
+            });
+
+            console.log('Found bison:', hitBison); // Debug found bison
+
+            if (hitBison && !hitBison.isDead) {
+                console.log('Applying damage to bison'); // Debug damage application
+                hitBison.takeDamage(25);
+                scene.remove(bullet.mesh);
+                bullets.splice(i, 1);
+            }
         }
     }
+
+    // Check for meat pickup from any bison
+    bisons.forEach(bison => {
+        if (bison.checkMeatPickup(player.position)) {
+            player.meatCollected++;
+        }
+    });
 
     // Update camera with both rotations
     camera.position.copy(player.position);
@@ -224,6 +310,10 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Add after creating bisons array and before checkTargeting function
+const raycaster = new THREE.Raycaster();
+const targetableObjects = bisons.map(bison => bison.mesh);
 
 // Start the game
 animate();
