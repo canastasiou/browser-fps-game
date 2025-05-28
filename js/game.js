@@ -7,10 +7,16 @@ const camera = new THREE.PerspectiveCamera(
     0.1,  // Near plane
     2000  // Far plane increased from 1000 to 2000
 );
+
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: false
+    alpha: false,
+    powerPreference: "high-performance",
+    precision: "highp"
 });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit max pixel ratio
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // Player state
 const player = {
@@ -27,7 +33,6 @@ let lastTime = performance.now();
 let fps = 0;
 
 // Add bullet management variables
-const bullets = [];
 let lastShotTime = 0;
 const SHOT_COOLDOWN = 250; // milliseconds between shots
 
@@ -171,30 +176,37 @@ function handleGamepad() {
 }
 
 // Add shooting function
+const bulletPool = new BulletPool(20);
+
 function shoot() {
-    // Create direction vector from camera
     const direction = new THREE.Vector3(0, 0, -1);
     direction.applyQuaternion(camera.quaternion);
 
-    // Create bullet starting from camera position
-    const bullet = new Bullet(camera.position.clone(), direction);
-    scene.add(bullet.mesh);
-    bullets.push(bullet);
+    const bullet = bulletPool.getBullet(camera.position.clone(), direction);
+    if (bullet) {
+        bullet.createTime = performance.now();
+        bullet.speed = 2.0;  // Add speed property
+    }
 }
 
 // Check targeting
-function checkTargeting() {
-    // Simple forward direction from camera's view
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const intersects = raycaster.intersectObjects(targetableObjects, true);
+let lastRaycastTime = 0;
+const RAYCAST_INTERVAL = 100; // ms between raycasts
 
-    // Update crosshair state
+function checkTargeting() {
+    const now = performance.now();
+    if (now - lastRaycastTime < RAYCAST_INTERVAL) return;
+    lastRaycastTime = now;
+
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const intersects = raycaster.intersectObjects(
+        bisons.filter(b => !b.isDead && b.mesh.visible)
+            .map(b => b.mesh),
+        true
+    );
+
     const crosshair = document.getElementById('crosshair');
-    if (intersects.length > 0) {
-        crosshair.classList.add('target');
-    } else {
-        crosshair.classList.remove('target');
-    }
+    crosshair.classList.toggle('target', intersects.length > 0);
 }
 
 // Add debug update function before animate
@@ -214,12 +226,19 @@ Meat Collected: ${player.meatCollected}`; // Add this line
 
 // Game loop
 function animate() {
-    // Calculate FPS
+    // Use requestAnimationFrame at start
+    requestAnimationFrame(animate);
+
+    // Throttle updates to 60fps
     const currentTime = performance.now();
+    if (currentTime - lastTime < 16.66) return; // Skip if less than ~60fps time has passed
+
+    // Calculate FPS
     fps = 1000 / (currentTime - lastTime);
     lastTime = currentTime;
 
-    requestAnimationFrame(animate);
+    // Update visibility before rendering
+    updateVisibility();
 
     // Handle keyboard movement
     if (moveState.forward) {
@@ -246,44 +265,35 @@ function animate() {
     checkTargeting();
 
     // Update bullets
-    for (let i = bullets.length - 1; i >= 0; i--) {
-        const bullet = bullets[i];
-        if (!bullet.update()) {
-            scene.remove(bullet.mesh);
-            bullets.splice(i, 1);
-            continue;
-        }
+    bulletPool.active.forEach(bullet => {
+        const moveVector = bullet.direction.clone().multiplyScalar(bullet.speed);
+        bullet.mesh.position.add(moveVector);
 
-        // Check for collisions with targets
-        const bulletPosition = bullet.mesh.position;
-        const raycaster = new THREE.Raycaster(bulletPosition, bullet.direction);
-        const intersects = raycaster.intersectObjects(targetableObjects, true);
+        const alive = performance.now() - bullet.createTime < 1000;
+        if (!alive) {
+            bulletPool.returnBullet(bullet);
+        } else {
+            // Check for collisions with targets
+            const raycaster = new THREE.Raycaster(bullet.mesh.position, bullet.direction);
+            const intersects = raycaster.intersectObjects(targetableObjects, true);
 
-        if (intersects.length > 0 && intersects[0].distance < bullet.speed) {
-            const hitMesh = intersects[0].object;
-            console.log('Hit mesh:', hitMesh); // Debug hit mesh
-
-            const hitBison = bisons.find(bison => {
-                // Check if the hit mesh is part of this bison's hierarchy
-                let isBisonMesh = false;
-                bison.mesh.traverse((child) => {
-                    if (child === hitMesh) {
-                        isBisonMesh = true;
-                    }
+            if (intersects.length > 0 && intersects[0].distance < bullet.speed) {
+                const hitMesh = intersects[0].object;
+                const hitBison = bisons.find(bison => {
+                    let isBisonMesh = false;
+                    bison.mesh.traverse((child) => {
+                        if (child === hitMesh) isBisonMesh = true;
+                    });
+                    return isBisonMesh;
                 });
-                return isBisonMesh;
-            });
 
-            console.log('Found bison:', hitBison); // Debug found bison
-
-            if (hitBison && !hitBison.isDead) {
-                console.log('Applying damage to bison'); // Debug damage application
-                hitBison.takeDamage(25);
-                scene.remove(bullet.mesh);
-                bullets.splice(i, 1);
+                if (hitBison && !hitBison.isDead) {
+                    hitBison.takeDamage(25);
+                    bulletPool.returnBullet(bullet);
+                }
             }
         }
-    }
+    });
 
     // Check for meat pickup from any bison
     bisons.forEach(bison => {
@@ -314,6 +324,32 @@ window.addEventListener('resize', () => {
 // Add after creating bisons array and before checkTargeting function
 const raycaster = new THREE.Raycaster();
 const targetableObjects = bisons.map(bison => bison.mesh);
+
+// Add after scene creation
+const frustum = new THREE.Frustum();
+const projScreenMatrix = new THREE.Matrix4();
+
+function updateVisibility() {
+    projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(projScreenMatrix);
+
+    // Check bisons
+    bisons.forEach(bison => {
+        if (bison.mesh && !bison.isDead) {
+            const distance = camera.position.distanceTo(bison.mesh.position);
+            bison.mesh.visible = distance < 100 && frustum.containsPoint(bison.mesh.position);
+        }
+    });
+
+    // Check trees
+    treePositions.forEach((pos, i) => {
+        const tree = scene.getObjectByName(`tree_${i}`);
+        if (tree) {
+            const distance = camera.position.distanceTo(tree.position);
+            tree.visible = distance < 150 && frustum.containsPoint(tree.position);
+        }
+    });
+}
 
 // Start the game
 animate();
